@@ -1,6 +1,6 @@
 # Deep Research Agent 🕵️‍♂️
 
-Este proyecto es un agente automatizado diseñado para generar Newsletters sobre AdecoAgro, recopilando y analizando noticias del sector de forma automática.
+Este proyecto es un agente automatizado diseñado para generar Newsletters sobre cualquier empresa, recopilando y analizando noticias del sector de forma automática.
 
 ## 🚀 Funcionalidades
 - Automatización de búsqueda de información y noticias.
@@ -17,7 +17,7 @@ Si deseas ejecutar este proyecto en tu máquina local:
 
 1. **Clonar el repositorio:**
    ```bash
-   git clone https://github.com/JavierGior/NewsLetter_AdecoAgro.git
+   git clone https://github.com/JavierGior/NewsLetter_researcher.git
    ```
 
 2. **Instalar dependencias:**
