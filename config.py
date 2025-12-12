@@ -1,7 +1,19 @@
 # config.py
+
 # ============================================================
 # CONFIGURACIÓN DEL PROYECTO
 # ============================================================
+
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+# Si no encuentra la variable en el .env, usa "Empresa Genérica" por defecto
+EMPRESA = os.getenv("TARGET_COMPANY", "AdecoAgro") 
+
+# Lista de subsidiarias o marcas relacionadas
+EMPRESAS_RELACIONADAS = ["Pilagá", "Molinos Ala", "La Lácteo"] 
 
 # Activa el diagnóstico de dependencias (True/False)
 DIAGNOSTICO_ACTIVADO = False
