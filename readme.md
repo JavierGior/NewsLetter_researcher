@@ -1,4 +1,3 @@
-    
 # Deep Research Agent 🕵️‍♂️
 
 Este proyecto es un agente automatizado diseñado para generar Newsletters sobre AdecoAgro, recopilando y analizando noticias del sector de forma automática.
@@ -19,33 +18,24 @@ Si deseas ejecutar este proyecto en tu máquina local:
 1. **Clonar el repositorio:**
    ```bash
    git clone https://github.com/JavierGior/NewsLetter_AdecoAgro.git
+   ```
 
-  
+2. **Instalar dependencias:**
+   ```bash
+   pip install -r requirements.txt
+   ```
 
-    Instalar dependencias:
-    code Bash
+3. **Configuración:**
+   - Ubica el archivo `env.example`.
+   - Crea una copia y renómbralo a `.env`.
+   - Abre el `.env` y coloca tus credenciales reales (API Keys, etc).
 
-    
-pip install -r requirements.txt
+4. **Ejecutar:**
+   ```bash
+   python main.py
+   ```
 
-  
+## ✒️ Autor
+**Javier Giordano** - [Perfil de LinkedIn](https://www.linkedin.com/in/javier-giordano/)
 
-Configuración:
-
-    Ubica el archivo env.example.
-
-    Crea una copia y renómbralo a .env.
-
-    Abre el .env y coloca tus credenciales reales (API Keys, etc).
-
-Ejecutar:
-code Bash
-
-        
-    python main.py
-
-      
-
-✒️ Autor
-
-Javier Giordano https://www.linkedin.com/in/javier-giordano/
+---
