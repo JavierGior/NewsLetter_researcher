@@ -1,6 +1,5 @@
-# main.py
 import sys
-import re  # <--- IMPORTANTE: Agregamos regex para filtrar URLs
+import re
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from typing import TypedDict
@@ -9,6 +8,7 @@ from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage
 from langgraph.graph import StateGraph, END
 
+# Asegúrate de importar EMPRESAS_RELACIONADAS aquí
 from config import EMPRESA, DIAS_BUSQUEDA, EMPRESAS_RELACIONADAS, TERMINOS_SECTOR
 from utils.verificador import verificar_claves
 from tools.buscador import tool_buscar_noticias
@@ -31,49 +31,30 @@ class AgentState(TypedDict):
 
 llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.3)
 
-# --- NUEVA FUNCIÓN AUXILIAR PARA FILTRAR DUPLICADOS ---
 def filtrar_y_acumular(texto_nuevo: str, urls_vistas: set) -> str:
-    """
-    Parsea el texto de salida del buscador, extrae las URLs y elimina
-    los bloques ITEM completos si la URL ya fue vista en búsquedas anteriores.
-    """
     if not texto_nuevo or "ITEM_" not in texto_nuevo:
         return texto_nuevo
-
-    # Dividimos por bloques de items
     bloques = texto_nuevo.split("ITEM_")
     texto_limpio = []
-    
-    # Regex para encontrar la URL dentro del bloque formateado
     patron_url = re.compile(r"URL_REAL:\s*(.+)")
 
     for bloque in bloques:
         if not bloque.strip(): continue
-        
-        # Reconstruimos el string del bloque
         bloque_full = f"ITEM_{bloque}"
-        
-        # Buscamos la URL
         match = patron_url.search(bloque_full)
         if match:
             url = match.group(1).strip()
-            # Si la URL ya la vimos en bloques anteriores, saltamos este item
             if url in urls_vistas:
                 continue
-            
-            # Si es nueva, la guardamos en el set y agregamos el texto
             urls_vistas.add(url)
             texto_limpio.append(bloque_full)
         else:
-            # Si por alguna razón no tiene URL, lo dejamos pasar por seguridad
             texto_limpio.append(bloque_full)
-            
     return "".join(texto_limpio)
 
 def investigador_node(state: AgentState):
-    print(f"🕵️  Iniciando investigación (Motor: Google Serper): {RANGO_FECHAS_STR}")
+    print(f"🕵️  Iniciando investigación para {EMPRESA}: {RANGO_FECHAS_STR}")
     
-    # Set de memoria para esta ejecución (evita duplicados entre bloques)
     urls_vistas_global = set()
 
     # 1. INTERNACIONAL
@@ -82,11 +63,11 @@ def investigador_node(state: AgentState):
         "query": f"{EMPRESA} stock earnings agriculture finance", 
         "dias": DIAS_BUSQUEDA
     })
-    # Filtramos inmediatamente
     res_global = filtrar_y_acumular(raw_global, urls_vistas_global)
     
     # 2. NACIONAL (Marca Principal)
-    print(f"   - Nacional (Adecoagro)...")
+    # MODIFICADO: Usa la variable EMPRESA
+    print(f"   - Nacional ({EMPRESA})...")
     raw_nac_main = tool_buscar_noticias.invoke({
         "query": f'"{EMPRESA}" Argentina', 
         "dias": DIAS_BUSQUEDA
@@ -95,6 +76,7 @@ def investigador_node(state: AgentState):
     
     # 3. NACIONAL (Subsidiarias)
     print(f"   - Subsidiarias...")
+    # MODIFICADO: Usa la lista importada dinámicamente
     subs_clean = " OR ".join([f'"{e}"' for e in EMPRESAS_RELACIONADAS[:4]])
     raw_nac_sub = tool_buscar_noticias.invoke({
         "query": f"({subs_clean}) Argentina", 
@@ -109,7 +91,6 @@ def investigador_node(state: AgentState):
         "query": f"({query_sector}) Argentina",
         "dias": DIAS_BUSQUEDA
     })
-    # Aquí es donde más duplicados suelen aparecer, el filtro los eliminará
     res_sector = filtrar_y_acumular(raw_sector, urls_vistas_global)
     
     # 5. REDES SOCIALES
@@ -121,12 +102,11 @@ def investigador_node(state: AgentState):
     
     full_text = (
         f"=== BLOQUE INTERNACIONAL ===\n{res_global}\n\n"
-        f"=== BLOQUE NACIONAL (MARCA) ===\n{res_nac_main}\n\n"
+        f"=== BLOQUE NACIONAL (MARCA PRINCIPAL) ===\n{res_nac_main}\n\n"
         f"=== BLOQUE NACIONAL (SUBSIDIARIAS) ===\n{res_nac_sub}\n\n"
         f"=== BLOQUE SECTOR/COMPETENCIA ===\n{res_sector}"
     )
     
-    # Contamos URLs únicas reales encontradas
     count = len(urls_vistas_global)
     return {"raw_content": full_text, "social_content": res_social, "source_count": count}
 
@@ -137,9 +117,13 @@ def redactor_node(state: AgentState):
     social_data = state["social_content"]
     count = state["source_count"]
     
-    # Prompt optimizado para DEDUPLICACIÓN SEMÁNTICA
+    # --- CONSTRUCCIÓN DINÁMICA DEL PROMPT ---
+    # Creamos la lista de subsidiarias formateada para que el LLM sepa qué buscar
+    # Ejemplo resultado: "* Menciones Pilagá: [Número]\n    * Menciones Molinos Ala: [Número]"
+    lista_subsidiarias_prompt = "\n    ".join([f"* Menciones {sub}: [Número]" for sub in EMPRESAS_RELACIONADAS])
+    
     prompt = f"""
-    Eres un analista de inteligencia corporativa experto. Genera el reporte para {EMPRESA}.
+    Eres un analista de inteligencia corporativa experto. Genera el reporte para la empresa: {EMPRESA}.
     
     RANGO DE FECHAS VÁLIDO: {RANGO_FECHAS_STR}
     
@@ -152,13 +136,11 @@ def redactor_node(state: AgentState):
     INSTRUCCIONES OBLIGATORIAS:
     1. **NO INVENTAR LINKS:** Usa solo los `URL_REAL` provistos.
     2. **DEDUPLICACIÓN SEMÁNTICA (CRÍTICO):** 
-       - Si encuentras múltiples noticias cubriendo el **MISMO HECHO** (aunque sean de fuentes distintas como Clarín y La Nación), **AGRÚPALAS** en un solo ítem.
+       - Si encuentras múltiples noticias cubriendo el **MISMO HECHO**, AGRÚPALAS.
        - Usa el título más descriptivo.
-       - Al final de la línea pon: [Leer más en Fuente 1](url1) | [Fuente 2](url2).
-       - NO generes dos ítems separados para la misma historia.
     3. **CLASIFICACIÓN:**
-       - Noticias de Adecoagro/Subsidiarias van primero.
-       - Noticias generales del sector (Sancor, clima) van en su sección, salvo que mencionen explícitamente a Adecoagro.
+       - Noticias de **{EMPRESA}** y sus marcas relacionadas ({', '.join(EMPRESAS_RELACIONADAS)}) van primero.
+       - Noticias generales del sector van en su sección, salvo que mencionen explícitamente a {EMPRESA}.
     4. **SENTIMIENTO VISUAL:** Usa ÚNICAMENTE: 🙂, 😐, 😠.
     
     ESTRUCTURA DE SALIDA (Markdown estricto):
@@ -177,10 +159,8 @@ def redactor_node(state: AgentState):
     * Negativo: [Número]
     
     ### Datos Volumen por Marca
-    * Menciones Adecoagro: [Número]
-    * Menciones Pilagá: [Número]
-    * Menciones Molinos Ala: [Número]
-    * Menciones La Lácteo: [Número]
+    * Menciones {EMPRESA}: [Número]
+    {lista_subsidiarias_prompt}
     
     ## 🇦🇷 Panorama Nacional
     [Análisis coyuntura local]
@@ -192,8 +172,7 @@ def redactor_node(state: AgentState):
     
  ### Data Social
     * Total Menciones: [Suma]
-    [LISTA DINÁMICA: SOLO REDES CON MENCIONES > 0. NO PONGAS LAS QUE TIENEN 0]
-    * [Nombre Red]: [N]
+    [LISTA DINÁMICA: SOLO REDES CON MENCIONES > 0]
     * [Nombre Red]: [N]
     ...
     * Social Positivo: [N]
@@ -204,26 +183,14 @@ def redactor_node(state: AgentState):
     
     ## 📰 Detalle de Noticias
     
-    ### 🇦🇷 Adecoagro y Subsidiarias
-    [Lista noticias directas agrupadas por tema. Si no hay: "Sin novedades directas".
-    Formato:
-    [EMOJI] **Título** - [Leer Fuente 1](URL1) | [Leer Fuente 2](URL2)
-    > *"Extracto..."*
-    ]
+    ### 🇦🇷 {EMPRESA} y Subsidiarias
+    [Lista noticias directas agrupadas por tema. Si no hay: "Sin novedades directas".]
     
     ### 🚜 Novedades del Sector (Competencia y Contexto)
-    [Lista noticias sectoriales. Agrupa si hay temas repetidos.
-    Formato:
-    [EMOJI] **Título** - [Leer más](URL_REAL)
-    > *"Extracto..."*
-    ]
+    [Lista noticias sectoriales.]
 
     ### 🌐 Internacional
-    [Lista noticias internacionales.
-    Formato:
-    [EMOJI] **Título** - [Leer más](URL_REAL)
-    > *"Extracto..."*
-    ]
+    [Lista noticias internacionales.]
     """
     
     response = llm.invoke([HumanMessage(content=prompt)])
@@ -240,7 +207,7 @@ workflow.add_edge("redactor", END)
 app = workflow.compile()
 
 if __name__ == "__main__":
-    print(f"🚀 Sistema v10.1 (Anti-Duplicados | Fecha: {RANGO_FECHAS_STR})")
+    print(f"🚀 Sistema v10.2 (Agnóstico | Fecha: {RANGO_FECHAS_STR})")
     try:
         res = app.invoke({
             "raw_content": "", 
